@@ -1,0 +1,163 @@
+; AS configuration and original binary file to patch over
+	CPU 68000
+	PADDING OFF
+	ORG		$000000
+	BINCLUDE	"prg.orig"
+
+; Free space to put new routines
+ROM_FREE = $07EF80
+
+PORT_IN0 = $200010
+PORT_IN1 = $200014
+PORT_SYS = $200018
+
+SERVICE_MENU_ENTRY_LOC = $03C7F6
+SERVICE_MENU_EXIT_LOC = $03C3D6
+
+SYS_CHK_BIT = 2
+
+Dsw1Shadow = $100E7F
+Dsw2Shadow = $100E80
+SysShadow = $100E82
+
+Credits = $100E84
+CreditsPrev = $100E86
+
+ScState = $1011FC
+
+; Use test button to enter service mode.
+	ORG	$00085C
+	btst	#SYS_CHK_BIT, (SysShadow).l
+
+	ORG	$000892
+	jmp	test_menu_entry
+
+	ORG	$03C5B6
+	jmp	test_menu_entry_2
+
+	ORG	$03C9EA
+	jmp	test_menu_exit
+
+	ORG	$03CA7A
+	jmp	test_menu_exit_2
+
+	ORG	$03CB66
+	jmp	test_menu_exit_3
+
+	ORG	$03CC88
+	jmp	test_menu_exit_4
+
+; Don't check the service DIP right on boot.
+	ORG	$009782
+	bne.s	$009792
+
+; Conditional coin math.
+	ORG	$03CCFC
+	jmp	conditional_coin_add
+
+; Don't draw the credit count if Free Play is enabled.
+	ORG	$009DAC
+	jmp	conditional_credit_draw_pre_label
+	ORG	$009DC6
+	jmp	conditional_credit_draw
+	ORG	$009E20
+	jmp	conditional_credit_draw_2
+
+; Change dip switch display test.
+	ORG	$03BA8D
+	dc.b	" 3 OFF  COIN PLAY"
+	ORG	$03BA9F
+	dc.b	" 3 ON   FREE PLAY"
+
+; Macro for checking free play ----------------------------
+FREEPLAY macro
+	btst.b	#2, (Dsw1Shadow).l  ; Previously test mode switch.
+	bne	.freeplay_is_enabled
+	bra	+
+
+.freeplay_is_enabled:
+	ENDM
+
+; New Routines ------------------------------------------
+	ORG	ROM_FREE
+
+	dc.b	"Batsugun Special Free Play patch by Michael Moffitt"
+	dc.b	0
+
+	.align	2
+
+test_menu_entry:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	test_wait_for_release
+	jmp	($08A2).w
+
+test_wait_for_release:
+	move.w	(PORT_SYS).l, d0
+	move.b	d0, (SysShadow).l
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	test_wait_for_release
+	jmp	(SERVICE_MENU_ENTRY_LOC).l
+
+test_menu_entry_2:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	test_wait_for_release
+	jmp	($03C5C2).l
+
+exit_service_mode:
+	jmp	(SERVICE_MENU_EXIT_LOC).l
+
+test_menu_exit:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	exit_service_mode
+	jmp	($03C97C).l
+
+test_menu_exit_2:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	exit_service_mode
+	jmp	($03CA8A).l
+
+test_menu_exit_3:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	exit_service_mode
+	jmp	($03CB36).l
+
+test_menu_exit_4:
+	btst.b	#SYS_CHK_BIT, (SysShadow).l
+	bne	exit_service_mode
+	jmp	($03CC0E).l
+
+conditional_coin_add:
+	FREEPLAY
+	move.w	#9, (Credits).l
+	move.w	#9, (CreditsPrev).l
+	jmp	($03CD20).l
+/	
+	btst	#0, ($100E83).l
+	beq	.finished
+	jmp	($03CD06).l
+.finished:
+	jmp	($03CD20).l
+
+conditional_credit_draw:
+	FREEPLAY
+	rts
+/
+	cmpi.w	#$B, (ScState).l
+	beq	.charsel_screen
+	jmp	($009DD2).l
+.charsel_screen:
+	jmp	($009E3A).l
+
+conditional_credit_draw_2:
+	FREEPLAY
+	rts
+/
+	move.w	#$FFFF, ($100E88).l
+	jmp	($009E28).l
+
+conditional_credit_draw_pre_label:
+	FREEPLAY
+	rts
+/
+	move.w	#$FFFF, ($100E88).l
+	jmp	($009DB4).l
